@@ -1,0 +1,13 @@
+---
+
+- name: Deploy python2.7 with raw commands
+  hosts:
+    - kong
+  gather_facts: no
+  user: root
+  tags:
+    - bootstrap
+
+  tasks:
+    - name: Install python2
+      raw: apt-get update && apt-get install python2.7 -y

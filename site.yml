@@ -1,0 +1,99 @@
+---
+
+- name: Deploy kong instance on vscale.io
+  hosts:
+    - kong
+  gather_facts: yes
+  user: root
+  tags:
+    - deploy
+
+  vars:
+    postgres_password: mysecretkongpassword
+
+  pre_tasks:
+    - name: Install some packages
+      apt:
+        pkg: "{{ item }}"
+        state: latest
+      with_items:
+        - apt-transport-https
+        - ca-certificates
+        - tcpdump
+        - vim-nox
+        - mc
+        - bash-completion
+        - mtr-tiny
+        - apparmor
+        - python-pip
+        - atop
+        - htop
+        - strace
+        - postgresql-common
+        - postgresql-client
+        - python-psycopg2
+
+    - name: Add the Docker repository key
+      apt_key:
+        keyserver: hkp://p80.pool.sks-keyservers.net:80
+        id: 58118E89F3A912897C070ADBF76221572C52609D
+
+    - name: Add the Docker repository
+      apt_repository:
+        repo: "{{ item }}"
+      with_items:
+        - "deb https://apt.dockerproject.org/repo {{ansible_lsb.id | lower}}-{{ansible_distribution_release|lower}} main"
+
+    - name: Install docker-engine
+      apt:
+        pkg: "{{ item }}"
+        state: latest
+      with_items:
+        - docker-engine
+
+    - name: Install Docker module python deps (sad, but by pip...)
+      pip:
+        name: docker-py
+        state: latest
+
+    - name: Start Postgresql container
+      docker_container:
+        name: kong-database
+        image: postgres:9.5
+        state: started
+        volumes:
+          - /pgdata:/var/lib/postgresql/kong_database
+        env:
+          POSTGRES_PASSWORD: "{{ postgres_password }}"
+          POSTGRES_USER: kong_user
+          POSTGRES_DB: kong
+      register: postgres_container
+
+    - name: Start Kong container
+      docker_container:
+        name: kong-app
+        image: mashape/kong
+        links:
+          - kong-database:kong-database
+        published_ports:
+          - 8000:8000
+          - 8001:8001
+        state: started
+        env:
+          KONG_PG_PASSWORD: "{{ postgres_password }}"
+          KONG_DATABASE: postgres
+          KONG_PG_DATABASE: kong
+          KONG_PG_HOST: kong-database
+          KONG_PG_USER: kong_user
+      register: kong_container
+
+    - name: Start Kong Dashboard container
+      docker_container:
+        name: kong-dashboard
+        image: pgbi/kong-dashboard
+        links:
+          - kong-app:kong-app
+        published_ports:
+          - 8080:8080
+        state: started
+      register: dashboard_container
